@@ -63,7 +63,7 @@ def download_weights(url, dest):
     start = time.time()
     print("downloading url: ", url)
     print("downloading to: ", dest)
-    subprocess.check_call(["pget", "-x", url, dest], close_fds=False)
+    subprocess.check_call(["pget", "-f", "-x", url, dest], close_fds=False)
     print("downloading took: ", time.time() - start)
 
 
@@ -81,7 +81,7 @@ class Predictor(BasePredictor):
         # interrupts this finishing.  To protect against odd states we
         # set tuned_weights to a value that lets the next prediction
         # know if it should try to load weights or if loading completed
-        self.tuned_weights = 'loading'
+        self.tuned_weights = "loading"
 
         local_weights_cache = self.weights_cache.ensure(weights)
 
@@ -167,10 +167,10 @@ class Predictor(BasePredictor):
         def _recursive_unset_lora(module: torch.nn.Module):
             if hasattr(module, "lora_layer"):
                 module.lora_layer = None
-            
+
             for _, child in module.named_children():
                 _recursive_unset_lora(child)
-        
+
         _recursive_unset_lora(pipe.unet)
         self.tuned_weights = None
         self.tuned_model = False
@@ -194,7 +194,7 @@ class Predictor(BasePredictor):
         ).to("cuda")
         self.feature_extractor = CLIPImageProcessor.from_pretrained(FEATURE_EXTRACTOR)
 
-        if not os.path.exists(SDXL_MODEL_CACHE):
+        if not os.path.exists(SDXL_MODEL_CACHE + "/model-index.json"):
             download_weights(SDXL_URL, SDXL_MODEL_CACHE)
 
         print("Loading sdxl txt2img pipeline...")
@@ -202,7 +202,7 @@ class Predictor(BasePredictor):
             SDXL_MODEL_CACHE,
             torch_dtype=torch.float16,
             use_safetensors=True,
-            variant="fp16",
+            # variant="fp16",
         )
         self.is_lora = False
         if weights or os.path.exists("./trained-model"):
@@ -240,7 +240,7 @@ class Predictor(BasePredictor):
         # FIXME(ja): if the answer to above is use VAE/Text_Encoder_2 from fine-tune
         #            what does this imply about lora + refiner? does the refiner need to know about
 
-        if not os.path.exists(REFINER_MODEL_CACHE):
+        if not os.path.exists(REFINER_MODEL_CACHE + "/model_index.json"):
             download_weights(REFINER_URL, REFINER_MODEL_CACHE)
 
         print("Loading refiner pipeline...")
@@ -250,7 +250,7 @@ class Predictor(BasePredictor):
             vae=self.txt2img_pipe.vae,
             torch_dtype=torch.float16,
             use_safetensors=True,
-            variant="fp16",
+            # variant="fp16",
         )
         self.refiner.to("cuda")
         print("setup took: ", time.time() - start)
@@ -460,3 +460,37 @@ class Predictor(BasePredictor):
             )
 
         return output_paths
+
+
+def comp():
+    p = Predictor()
+    p.setup()
+    orig = p.txt2img_pipe.unet
+    p.txt2img_pipe.unet = torch_tensorrt.MutableTorchTensorRTModule(
+        orig, make_refittable=True
+    )
+    p.predict(
+        "a",
+        "",
+        None,
+        None,
+        1024,
+        1024,
+        1,
+        "K_EULER",
+        30,
+        7.5,
+        0.8,
+        None,
+        "no_refiner",
+        0.8,
+        None,
+        False,
+        0.6,
+        None,
+        True,
+    )
+    torch.serialization.save.__defaults__ = tuple(
+        5 if v == 2 else v for v in torch.serialization.save.__defaults__
+    )
+    torch_tensorrt.MutableTorchTensorRTModule.save(p.txt2img_pipe.unet, "sdxl_unet.pkl")
