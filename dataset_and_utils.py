@@ -6,7 +6,9 @@ import pandas as pd
 import PIL
 import torch
 import torch.utils.checkpoint
-from diffusers import AutoencoderKL, DDPMScheduler, UNet2DConditionModel
+from diffusers.models.autoencoders.autoencoder_kl import AutoencoderKL
+from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
+from diffusers.models.unets.unet_2d_condition import UNet2DConditionModel
 from PIL import Image
 from safetensors import safe_open
 from safetensors.torch import save_file
